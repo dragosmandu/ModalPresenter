@@ -2,7 +2,7 @@
 
 A swift framework to present modal content.
 
-![](Simulator-Screen-Recording-iPhone12Pro.mp4)
+![](Simulator_Screen_Recording_iPhone12Pro.gif)
 
 ## License
 
