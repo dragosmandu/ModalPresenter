@@ -16,7 +16,7 @@ import ModalPresenter
 
 class ModalPresenterTestViewController: UIViewController
 {
-    private let m_ModalPresenter: ModalPresenter = .init(isTransitionWithOpacity: false)
+    private let m_ModalPresenter: ModalPresenter = .init(isTransitionWithOpacity: false, isGestureDismissable: true)
     private let m_ModalContent: UIViewController = .init()
     
     override func viewDidLoad()
@@ -65,7 +65,7 @@ class ModalPresenterTestViewController: UIViewController
         NSLayoutConstraint.activate(
             [
                 presentTrailingBtn.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-                presentTrailingBtn.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 120)
+                presentTrailingBtn.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 40)
             ]
         )
         
@@ -81,7 +81,7 @@ class ModalPresenterTestViewController: UIViewController
         NSLayoutConstraint.activate(
             [
                 presentTopBtn.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-                presentTopBtn.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 240)
+                presentTopBtn.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 80)
             ]
         )
         
@@ -97,7 +97,7 @@ class ModalPresenterTestViewController: UIViewController
         NSLayoutConstraint.activate(
             [
                 prsentBottomBtn.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-                prsentBottomBtn.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 360)
+                prsentBottomBtn.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 120)
             ]
         )
     }
@@ -174,4 +174,3 @@ class ModalPresenterTestViewController: UIViewController
         }
     }
 }
-

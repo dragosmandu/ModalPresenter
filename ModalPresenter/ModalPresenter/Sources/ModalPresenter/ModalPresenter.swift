@@ -14,7 +14,7 @@
 import UIKit
 import os
 
-public class ModalPresenter
+public class ModalPresenter: NSObject
 {
     // MARK: - Initialization
     
@@ -23,14 +23,14 @@ public class ModalPresenter
     public static var s_LoggerSubsystem: String = Bundle.main.bundleIdentifier!
     public static var s_LoggerCategory: String = "ModalPresenterViewController"
     public static var s_Logger: Logger = .init(subsystem: s_LoggerSubsystem, category: s_LoggerCategory)
-    public static var s_AnimationDuration: TimeInterval = 0.55
+    public static var s_AnimationDuration: TimeInterval = 0.3
     public static var s_AnimationDelay: TimeInterval = 0
-    public static var s_AnimationSpringDamping: CGFloat = 0.95
-    public static var s_AnimationInitialSpringVelocity: CGFloat = 0.25
-    public static var s_AnimationOptions: UIView.AnimationOptions = .curveEaseInOut
+    public static var s_AnimationOptions: UIView.AnimationOptions = .curveEaseOut
+    public static var s_DismissGestureName: String = "DismissGestureName"
     
     /// If true, the modal content will be presented/dismissed with opacity transition.
     public var isTransitionWithOpacity: Bool
+    public var isGestureDismissable: Bool
     
     public private(set) var isPresented: Bool = false
     
@@ -39,11 +39,71 @@ public class ModalPresenter
     private var m_StartEdge: ModalPresenterStartEdge? = nil
     private var m_OrigCenterPoint: CGPoint? = nil
     
+    /// The center point of the content controller when a dismiss gesture was recognized.
+    private var m_DismissCenterStart: CGPoint? = nil
+    
+    /// The maximum drag for a dismiss gesture on the oposite side of the corect dismiss drag.
+    private var m_DismissMaxOpositeDrag: CGFloat
+    {
+        guard let presenterController = m_PresenterController, let dismissCenterStart = m_DismissCenterStart else { return 0 }
+        let ratio: CGFloat = 0.05
+        
+        switch m_StartEdge
+        {
+            case .k_Leading, .k_Trailing:
+                let maxOpositeDrag = presenterController.view.frame.width * ratio
+                
+                if m_StartEdge == .k_Leading
+                {
+                    return dismissCenterStart.x + maxOpositeDrag
+                }
+                else
+                {
+                    return dismissCenterStart.x - maxOpositeDrag
+                }
+                
+            default:
+                let maxOpositeDrag = presenterController.view.frame.height * ratio
+                
+                if m_StartEdge == .k_Top
+                {
+                    return dismissCenterStart.y + maxOpositeDrag
+                }
+                else
+                {
+                    return dismissCenterStart.y - maxOpositeDrag
+                }
+        }
+    }
+    
+    /// The minimum translation in the correct dismiss direction in order to dismiss the modal.
+    private var m_MinTranslationToDismiss: CGFloat
+    {
+        guard let contentController = m_ContentController else { return 0 }
+        let ratio: CGFloat = 0.33
+        
+        switch m_StartEdge
+        {
+            case .k_Leading:
+                return -contentController.view.frame.size.width * ratio
+                
+            case .k_Trailing:
+                return contentController.view.frame.size.width * ratio
+                
+            case .k_Top:
+                return -contentController.view.frame.size.height * ratio
+                
+            default:
+                return contentController.view.frame.size.height * ratio
+        }
+    }
+    
     
     /// - Parameter isTransitionWithOpacity: If true, the modal content will be presented/dismissed with opacity transition.
-    public init(isTransitionWithOpacity: Bool = false)
+    public init(isTransitionWithOpacity: Bool = false, isGestureDismissable: Bool = true)
     {
         self.isTransitionWithOpacity = isTransitionWithOpacity
+        self.isGestureDismissable = isGestureDismissable
     }
 }
 
@@ -77,6 +137,11 @@ public extension ModalPresenter
                 self.m_PresenterController = presenterController
                 self.m_StartEdge = startEdge
                 self.m_OrigCenterPoint = contentController.view.center
+                
+                if self.isGestureDismissable
+                {
+                    self.addDismissGesture() // Enabled modals to be dismissed with drag gesture.
+                }
                 
                 guard let startCenterPoint = self.getStartCenterPoint()
                 else
@@ -181,6 +246,16 @@ public extension ModalPresenter
 
 private extension ModalPresenter
 {
+    func addDismissGesture()
+    {
+        let dismissGesture = UIPanGestureRecognizer(target: self, action: #selector(didDismiss))
+        
+        dismissGesture.maximumNumberOfTouches = 1
+        dismissGesture.minimumNumberOfTouches = 1
+        dismissGesture.name = ModalPresenter.s_DismissGestureName
+        
+        m_ContentController?.view.addGestureRecognizer(dismissGesture)
+    }
     
     func reset()
     {
@@ -194,10 +269,10 @@ private extension ModalPresenter
     /// Calculates the center point where the modal content is offscreen.
     func getStartCenterPoint() -> CGPoint?
     {
-        guard let contentControllerView = m_ContentController?.view
+        guard let contentControllerView = m_ContentController?.view , let presenterController = m_PresenterController
         else
         {
-            ModalPresenter.s_Logger.debug("Invalid nil content controller.")
+            ModalPresenter.s_Logger.debug("Invalid nil content/presenter controller.")
             
             return nil
         }
@@ -205,19 +280,19 @@ private extension ModalPresenter
         let contentControllerFrame = contentControllerView.frame
         var startCenterPoint = contentControllerView.center
         
-        switch self.m_StartEdge
+        switch m_StartEdge
         {
             case .k_Leading:
                 startCenterPoint.x -= (contentControllerFrame.maxX + extraSafeOffset)
                 
             case .k_Trailing:
-                startCenterPoint.x += (contentControllerFrame.maxX + extraSafeOffset)
+                startCenterPoint.x += (presenterController.view.frame.width - contentControllerFrame.minX + extraSafeOffset)
                 
             case .k_Top:
                 startCenterPoint.y -= (contentControllerFrame.maxY + extraSafeOffset)
                 
             default:
-                startCenterPoint.y += (UIScreen.main.bounds.height - contentControllerFrame.minY + extraSafeOffset)
+                startCenterPoint.y += (presenterController.view.frame.height - contentControllerFrame.minY + extraSafeOffset)
         }
         
         return startCenterPoint
@@ -228,10 +303,145 @@ private extension ModalPresenter
         UIView.animate(
             withDuration: ModalPresenter.s_AnimationDuration,
             delay: ModalPresenter.s_AnimationDelay,
-            usingSpringWithDamping: ModalPresenter.s_AnimationSpringDamping,
-            initialSpringVelocity: ModalPresenter.s_AnimationInitialSpringVelocity,
             options: ModalPresenter.s_AnimationOptions
         ) { animations() } completion: { finished in completion(finished) }
     }
+    
+    func moveModalWith(translation: CGPoint)
+    {
+        guard let contentController = m_ContentController, let dismissCenterStart = m_DismissCenterStart else { return }
+        
+        switch m_StartEdge
+        {
+            case .k_Leading, .k_Trailing:
+                let newCenterX = dismissCenterStart.x + translation.x
+                
+                if m_StartEdge == .k_Leading && newCenterX <= m_DismissMaxOpositeDrag
+                {
+                    contentController.view.center.x = newCenterX
+                }
+                else if m_StartEdge == .k_Trailing && newCenterX >= m_DismissMaxOpositeDrag
+                {
+                    contentController.view.center.x = newCenterX
+                }
+                
+            default:
+                let newCenterY = dismissCenterStart.y + translation.y
+                
+                if m_StartEdge == .k_Top && newCenterY <= m_DismissMaxOpositeDrag
+                {
+                    contentController.view.center.y = newCenterY
+                }
+                else if m_StartEdge == .k_Bottom && newCenterY >= m_DismissMaxOpositeDrag
+                {
+                    contentController.view.center.y = newCenterY
+                }
+        }
+    }
+    
+    func onDismissGestureEndedWith(translation: CGPoint)
+    {
+        guard let contentController = m_ContentController, let dismissCenterStart = m_DismissCenterStart else { return }
+        
+        switch m_StartEdge
+        {
+            case .k_Leading:
+                if translation.x > m_MinTranslationToDismiss
+                {
+                    animateWith
+                    {
+                        contentController.view.center = dismissCenterStart
+                    } completion:
+                    { finished in
+                        if !finished
+                        {
+                            contentController.view.center = dismissCenterStart
+                        }
+                    }
+                }
+                else
+                {
+                    dismiss()
+                }
+                
+            case .k_Trailing:
+                if translation.x < m_MinTranslationToDismiss
+                {
+                    animateWith
+                    {
+                        contentController.view.center = dismissCenterStart
+                    } completion:
+                    { finished in
+                        if !finished
+                        {
+                            contentController.view.center = dismissCenterStart
+                        }
+                    }
+                }
+                else
+                {
+                    dismiss()
+                }
+                
+            case .k_Top:
+                if translation.y > m_MinTranslationToDismiss
+                {
+                    animateWith
+                    {
+                        contentController.view.center = dismissCenterStart
+                    } completion:
+                    { finished in
+                        if !finished
+                        {
+                            contentController.view.center = dismissCenterStart
+                        }
+                    }
+                }
+                else
+                {
+                    dismiss()
+                }
+                
+            default:
+                if translation.y < m_MinTranslationToDismiss
+                {
+                    animateWith
+                    {
+                        contentController.view.center = dismissCenterStart
+                    } completion:
+                    { finished in
+                        if !finished
+                        {
+                            contentController.view.center = dismissCenterStart
+                        }
+                    }
+                }
+                else
+                {
+                    dismiss()
+                }
+        }
+    }
+    
+    @objc func didDismiss(_ gesture: UIPanGestureRecognizer)
+    {
+        guard let contentController = m_ContentController, let presenterController = m_PresenterController else { return }
+        
+        if gesture.state == .began
+        {
+            let translation = gesture.translation(in: presenterController.view)
+            m_DismissCenterStart = contentController.view.center
+            moveModalWith(translation: translation)
+        }
+        else if gesture.state == .changed
+        {
+            let translation = gesture.translation(in: presenterController.view)
+            moveModalWith(translation: translation)
+        }
+        else if gesture.state == .ended
+        {
+            let translation = gesture.translation(in: presenterController.view)
+            onDismissGestureEndedWith(translation: translation)
+        }
+    }
 }
-
